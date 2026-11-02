@@ -1326,10 +1326,9 @@ function SaveManager({onBack}:{onBack:()=>void}){
       const pakSquadRefs=cleaned.teams.reduce((count,team)=>count+team.playerIds.filter(id=>removedIds.has(id)).length,0);
       if(remainingPakistani||pakSquadRefs)throw new Error('Pakistan player cleanup verification failed');
 
-      const rohit=cleaned.players.find(p=>p.name.trim().toLowerCase()==='rohit sharma');
-      if(!rohit)throw new Error('Rohit Sharma is missing from the bundled player pool.');
+      const rohitPresent=cleaned.players.some(p=>p.name.trim().toLowerCase()==='rohit sharma');
       setGame(cleaned);await saveGame(cleaned);await refresh();
-      setSaveStatus(`Import complete · ${removedIds.size} Pakistani players removed from squads, retention and tournament · ${additions.length} international players added · Rohit Sharma verified`);
+      setSaveStatus(`Import complete · ${removedIds.size} Pakistani players removed from squads, retention and tournament · ${additions.length} international players added${rohitPresent?' · Rohit Sharma verified':' · Note: Rohit Sharma is not in this imported player pool and must be added separately'}`);
     }catch(error){
       console.error('Career import failed:',error);
       setSaveStatus(error instanceof Error?`Import failed: ${error.message}`:'Import failed: the selected file is not a valid Dynasty T20 career JSON.');

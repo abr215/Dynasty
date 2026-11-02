@@ -78,20 +78,104 @@ function PageHead({kicker,title,sub,action}:{kicker:string;title:string;sub:stri
 
 function Teams({game}:{game:GameState}){
   const [notice,setNotice]=useState('');
+  const [manageTeamId,setManageTeamId]=useState(game.teams.find(t=>t.kind==='human')?.id??game.teams[0]?.id??'');
+  const [playerQuery,setPlayerQuery]=useState('');
   const canEditStructure=game.fixtures.length===0&&game.phase==='auction'&&game.auction.status==='not-started';
-  const addFranchise=()=>{
-    if(!canEditStructure||game.teams.length>=14){setNotice('Team structure can only change before the auction starts (maximum 14 teams).');return;}
-    const i=game.teams.length;const t=makeTeam(i,'bot');t.id=`team-extra-${Date.now()}`;t.name=botNames[i%botNames.length];t.code=t.name.slice(0,3).toUpperCase();t.purse=game.rules.startingPurse;t.auctionBudget=game.rules.startingPurse;
-    game.teams.push(t);game.league.teamCount=game.teams.length;game.standings.push({...makeRecord(),teamId:t.id});game.auction.lotIds=game.players.filter(p=>p.auctionEligible!==false&&!game.teams.some(team=>team.playerIds.includes(p.id))).map(p=>p.id);setGame({...game});setNotice(`${t.name} added. Auction pool refreshed.`);
+  const canManagePlayers=game.fixtures.length===0&&game.phase!=='completed'&&!['live','paused'].includes(game.auction.status);
+  const selectedTeam=game.teams.find(t=>t.id===manageTeamId)??game.teams[0];
+  const isPakistani=(p:Player)=>[p.nationality as string,(p as any).country,(p as any).nation,(p as any).countryCode]
+    .some(v=>typeof v==='string'&&['pakistan','pakistani','pak','pk'].includes(v.trim().toLowerCase().replace(/[^a-z]/g,'')));
+  const assignedIds=new Set(game.teams.flatMap(t=>t.playerIds));
+  const freeAgents=game.players.filter(p=>!assignedIds.has(p.id)&&!isPakistani(p)&&(!playerQuery.trim()||p.name.toLowerCase().includes(playerQuery.trim().toLowerCase())||p.nationality.toLowerCase().includes(playerQuery.trim().toLowerCase())||p.role.toLowerCase().includes(playerQuery.trim().toLowerCase()))).slice(0,80);
+  const addFranchise=(kind:'human'|'bot')=>{
+    if(!canEditStructure||game.teams.length>=14){setNotice('Team structure can only change before the auction starts. Maximum 14 teams.');return;}
+    const i=game.teams.length;const t=makeTeam(i,kind);t.id=`team-extra-${kind}-${Date.now()}`;t.name=kind==='human'?`My Franchise ${i+1}`:botNames[i%botNames.length];t.code=kind==='human'?`TM${i+1}`:t.name.slice(0,3).toUpperCase();t.purse=game.rules.startingPurse;t.auctionBudget=game.rules.startingPurse;
+    game.teams.push(t);game.league.teamCount=game.teams.length;game.league.humanCount=game.teams.filter(x=>x.kind==='human').length;game.standings.push({...makeRecord(),teamId:t.id});game.auction.lotIds=game.players.filter(p=>p.auctionEligible!==false&&!game.teams.some(team=>team.playerIds.includes(p.id))&&!isPakistani(p)).map(p=>p.id);setGame({...game});setManageTeamId(t.id);setNotice(`${t.name} added.`);
   };
   const removeFranchise=(id:string)=>{
-    if(!canEditStructure||game.teams.length<=2){setNotice('Teams can only be removed before auction; at least two franchises are required.');return;}
+    if(!canEditStructure||game.teams.length<=2){setNotice('At least two franchises are required. Structure changes are pre-auction only.');return;}
     const team=game.teams.find(t=>t.id===id);if(!team)return;
-    if(team.playerIds.length){setNotice('Cannot remove a franchise that already owns players.');return;}
-    game.teams=game.teams.filter(t=>t.id!==id);game.standings=game.standings.filter(x=>x.teamId!==id);game.league.teamCount=game.teams.length;game.league.humanCount=game.teams.filter(t=>t.kind==='human').length;game.auction.lotIds=game.players.filter(p=>p.auctionEligible!==false&&!game.teams.some(team=>team.playerIds.includes(p.id))).map(p=>p.id);setGame({...game});setNotice(`${team.name} removed. Auction pool refreshed.`);
+    if(team.playerIds.length){setNotice('Release all players from this franchise before removing it.');return;}
+    game.teams=game.teams.filter(t=>t.id!==id);game.standings=game.standings.filter(x=>x.teamId!==id);game.league.teamCount=game.teams.length;game.league.humanCount=game.teams.filter(t=>t.kind==='human').length;game.auction.lotIds=game.players.filter(p=>p.auctionEligible!==false&&!game.teams.some(team=>team.playerIds.includes(p.id))&&!isPakistani(p)).map(p=>p.id);setGame({...game});setManageTeamId(game.teams[0]?.id??'');setNotice(`${team.name} removed.`);
   };
   const changePitch=(id:string,pitch:PitchType)=>{const t=game.teams.find(x=>x.id===id);if(t){t.pitch=pitch;setGame({...game});setNotice(`${t.name} pitch profile updated.`);}};
-  return <div className="page"><PageHead kicker="FRANCHISE ROOM" title="Franchise & tournament controls" sub="Manage franchise identities, home pitch profiles and pre-auction league structure." action={canEditStructure?<Button primary onClick={addFranchise}>Add franchise</Button>:undefined}/>{notice&&<p className="muted">{notice}</p>}<div className="franchise-grid">{game.teams.map(t=><Panel key={t.id} className={t.kind==='human'?'human-card':''}><div className="franchise-top"><Crest team={t} size={58}/><div><span className="eyebrow">{t.kind==='human'?'MANAGED':'AI CONTROLLED'}</span><h3>{t.name}</h3><p>{t.code} · {t.manager}</p></div></div><div className="team-metrics"><Stat label="Record" value={`${t.record.won}-${t.record.lost}`}/><Stat label="Squad" value={t.playerIds.length}/><Stat label="Purse" value={money(t.purse)}/><Stat label="Pitch" value={t.pitch}/></div><div className="form-grid"><Select label="Home pitch" value={t.pitch} onChange={e=>changePitch(t.id,e.target.value as PitchType)}><option value="flat">Flat / batting</option><option value="spin-friendly">Spin-friendly</option><option value="seam-friendly">Seam-friendly</option><option value="slow">Slow / two-paced</option></Select>{canEditStructure&&t.kind==='bot'&&<Button ghost onClick={()=>removeFranchise(t.id)}>Remove franchise</Button>}</div><div className="team-form-line"><span>LAST FIVE</span><div>{Array.from({length:5},(_,i)=>{const x=t.record.lastFive[i];return <b key={i} className={x==='W'?'win':x==='L'?'loss':'neutral'}>{x??'—'}</b>})}</div></div></Panel>)}</div><Panel><Kicker>TOURNAMENT RULES</Kicker><div className="team-metrics"><Stat label="Franchises" value={game.teams.length}/><Stat label="Starting purse" value={money(game.rules.startingPurse)}/><Stat label="Overseas squad" value={game.rules.maxOverseasSquad}/><Stat label="Overseas XI" value={game.rules.maxOverseasXI}/></div>{canEditStructure?<div className="form-grid"><Select label="Auction purse per franchise" value={game.rules.startingPurse} onChange={e=>{const amount=Number(e.target.value);game.rules.startingPurse=amount;game.teams.forEach(t=>{t.purse=amount;t.auctionBudget=amount;});setGame({...game});}}>{[20,30,40,50,60,70,80,90,100].map(n=><option key={n} value={n}>{money(n)}</option>)}</Select><Select label="Overseas players per squad" value={game.rules.maxOverseasSquad} onChange={e=>{game.rules.maxOverseasSquad=Number(e.target.value);game.rules.maxOverseasXI=Math.min(game.rules.maxOverseasXI,game.rules.maxOverseasSquad);setGame({...game});}}>{[2,3,4,5,6,7,8,9,10,11].map(n=><option key={n} value={n}>{n}</option>)}</Select><Select label="Overseas players in XI" value={game.rules.maxOverseasXI} onChange={e=>{game.rules.maxOverseasXI=Number(e.target.value);setGame({...game});}}>{[2,3,4,5,6,7,8,9,10,11].filter(n=>n<=game.rules.maxOverseasSquad).map(n=><option key={n} value={n}>{n}</option>)}</Select></div>:<p className="muted">Team count and overseas quotas are locked once the auction starts, to protect squad and fixture integrity.</p>}</Panel></div>;
+  const changeSquadSize=(size:number)=>{
+    if(!canEditStructure){setNotice('Squad size is locked after the auction starts.');return;}
+    if(game.teams.some(t=>t.playerIds.length>size)){setNotice('Squad size cannot be lower than a franchise current roster.');return;}
+    game.rules.minSquad=size;game.rules.maxSquad=size;
+    game.auction.lotIds=game.players.filter(p=>p.auctionEligible!==false&&!game.teams.some(t=>t.playerIds.includes(p.id))&&!isPakistani(p)).map(p=>p.id);
+    setGame({...game});setNotice(`Squad target changed to ${size} players per franchise.`);
+  };
+  const changePurse=(amount:number)=>{
+    if(!canEditStructure)return;
+    game.rules.startingPurse=amount;game.teams.forEach(t=>{t.purse=amount;t.auctionBudget=amount;});setGame({...game});setNotice(`Auction purse set to ₹${amount} Cr for every franchise.`);
+  };
+  const changeOverseasSquad=(limit:number)=>{
+    if(!canEditStructure)return;
+    if(game.teams.some(t=>t.playerIds.filter(id=>game.players.find(p=>p.id===id)?.overseas).length>limit)){setNotice('At least one current squad exceeds that overseas limit.');return;}
+    game.rules.maxOverseasSquad=limit;game.rules.maxOverseasXI=Math.min(game.rules.maxOverseasXI,limit);setGame({...game});setNotice(`Overseas squad limit set to ${limit}.`);
+  };
+  const changeOverseasXI=(limit:number)=>{
+    if(!canEditStructure)return;
+    if(limit>game.rules.maxOverseasSquad){setNotice('Playing XI overseas limit cannot exceed the squad overseas limit.');return;}
+    game.rules.maxOverseasXI=limit;setGame({...game});setNotice(`Playing XI overseas limit set to ${limit}.`);
+  };
+  const assignPlayer=(p:Player)=>{
+    if(!selectedTeam||!canManagePlayers)return;
+    if(selectedTeam.playerIds.length>=game.rules.maxSquad){setNotice(`${selectedTeam.name} has reached its ${game.rules.maxSquad}-player squad limit.`);return;}
+    const overseas=selectedTeam.playerIds.filter(id=>game.players.find(x=>x.id===id)?.overseas).length;
+    if(p.overseas&&overseas>=game.rules.maxOverseasSquad){setNotice(`${selectedTeam.name} has reached its overseas limit (${game.rules.maxOverseasSquad}).`);return;}
+    selectedTeam.playerIds=[...selectedTeam.playerIds,p.id];
+    game.auction.lotIds=game.auction.lotIds.filter(id=>id!==p.id);
+    game.auction.unsoldIds=game.auction.unsoldIds.filter(id=>id!==p.id);
+    game.auction.soldIds=game.auction.soldIds.filter(id=>id!==p.id);
+    if(game.auction.soldPrices)delete game.auction.soldPrices[p.id];
+    setGame({...game});setNotice(`${p.name} assigned to ${selectedTeam.name}.`);
+  };
+  const releasePlayer=(p:Player)=>{
+    if(!selectedTeam||!canManagePlayers)return;
+    selectedTeam.playerIds=selectedTeam.playerIds.filter(id=>id!==p.id);
+    selectedTeam.playingXI=(selectedTeam.playingXI??[]).filter(id=>id!==p.id);
+    if(selectedTeam.captainId===p.id)delete selectedTeam.captainId;
+    if(selectedTeam.viceCaptainId===p.id)delete selectedTeam.viceCaptainId;
+    if(selectedTeam.wicketkeeperId===p.id)delete selectedTeam.wicketkeeperId;
+    if(selectedTeam.bowlingPlan)delete selectedTeam.bowlingPlan[p.id];
+    if(selectedTeam.tacticalRoles)delete selectedTeam.tacticalRoles[p.id];
+    if(game.auction.status==='complete')game.auction.unsoldIds=[...new Set([...game.auction.unsoldIds,p.id])];
+    else if(!game.auction.lotIds.includes(p.id))game.auction.lotIds.push(p.id);
+    game.auction.soldIds=game.auction.soldIds.filter(id=>id!==p.id);
+    if(game.auction.soldPrices)delete game.auction.soldPrices[p.id];
+    setGame({...game});setNotice(`${p.name} released from ${selectedTeam.name}.`);
+  };
+  return <div className="page">
+    <PageHead kicker="FRANCHISE ROOM" title="Franchise & tournament controls" sub="Manage franchise identities, squad composition, auction rules, home pitch profiles and free-agent assignments." action={canEditStructure?<div className="row"><Button ghost onClick={()=>addFranchise('human')}>Add human team</Button><Button primary onClick={()=>addFranchise('bot')}>Add AI team</Button></div>:undefined}/>
+    {notice&&<p className="muted">{notice}</p>}
+    <div className="franchise-grid">{game.teams.map(t=><Panel key={t.id} className={t.kind==='human'?'human-card':''}>
+      <div className="franchise-top"><Crest team={t} size={58}/><div><span className="eyebrow">{t.kind==='human'?'MANAGED':'AI CONTROLLED'}</span><h3>{t.name}</h3><p>{t.code} · {t.manager}</p></div></div>
+      <div className="team-metrics"><Stat label="Record" value={`${t.record.won}-${t.record.lost}`}/><Stat label="Squad" value={t.playerIds.length}/><Stat label="Purse" value={money(t.purse)}/><Stat label="Pitch" value={t.pitch}/></div>
+      <div className="form-grid"><Field label="Franchise name" value={t.name} onChange={e=>{t.name=e.target.value;setGame({...game});}}/><Field label="Short code" maxLength={4} value={t.code} onChange={e=>{t.code=e.target.value.toUpperCase();setGame({...game});}}/><Field label="Manager" value={t.manager??''} onChange={e=>{t.manager=e.target.value;setGame({...game});}}/><Field label="Home ground" value={t.ground} onChange={e=>{t.ground=e.target.value;setGame({...game});}}/><Select label="Home pitch" value={t.pitch} onChange={e=>changePitch(t.id,e.target.value as PitchType)}><option value="flat">Flat / batting</option><option value="spin-friendly">Spin-friendly</option><option value="seam-friendly">Seam-friendly</option><option value="slow">Slow / two-paced</option></Select>{canEditStructure&&t.playerIds.length===0&&game.teams.length>2&&<Button ghost onClick={()=>removeFranchise(t.id)}>Remove franchise</Button>}</div>
+      <div className="team-form-line"><span>LAST FIVE</span><div>{Array.from({length:5},(_,i)=>{const x=t.record.lastFive[i];return <b key={i} className={x==='W'?'win':x==='L'?'loss':'neutral'}>{x??'—'}</b>})}</div></div>
+    </Panel>)}</div>
+    <Panel>
+      <Kicker>TOURNAMENT RULES · DIRECT CONTROLS</Kicker>
+      <div className="team-metrics"><Stat label="Franchises" value={game.teams.length}/><Stat label="Starting purse" value={money(game.rules.startingPurse)}/><Stat label="Squad size" value={game.rules.maxSquad}/><Stat label="Overseas squad" value={game.rules.maxOverseasSquad}/><Stat label="Overseas XI" value={game.rules.maxOverseasXI}/></div>
+      {canEditStructure?<div className="form-grid">
+        <Select label="Auction purse per franchise" value={game.rules.startingPurse} onChange={e=>changePurse(Number(e.target.value))}>{[20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100].map(n=><option key={n} value={n}>{money(n)}</option>)}</Select>
+        <Select label="Exact squad size" value={game.rules.maxSquad} onChange={e=>changeSquadSize(Number(e.target.value))}>{[11,12,13,14,15,16,17,18,19,20,22,25].map(n=><option key={n} value={n}>{n} players</option>)}</Select>
+        <Select label="Overseas players per squad" value={game.rules.maxOverseasSquad} onChange={e=>changeOverseasSquad(Number(e.target.value))}>{Array.from({length:12},(_,n)=>n).map(n=><option key={n} value={n}>{n} players</option>)}</Select>
+        <Select label="Overseas players in XI" value={game.rules.maxOverseasXI} onChange={e=>changeOverseasXI(Number(e.target.value))}>{Array.from({length:Math.min(11,game.rules.maxOverseasSquad)+1},(_,n)=>n).map(n=><option key={n} value={n}>{n} players</option>)}</Select>
+      </div>:<p className="muted">Team count, squad size, purse and overseas quotas are locked once the auction starts. Home pitch and squad player management remain available before the first fixture.</p>}
+    </Panel>
+    <Panel>
+      <div className="panel-head"><div><Kicker>PLAYER ROSTER MANAGER</Kicker><h3>Assign or release players directly</h3><p>Move players between the free-agent pool and a franchise without editing JSON or code.</p></div><span className="muted">{game.players.length} players in database</span></div>
+      <div className="form-grid"><Select label="Select franchise" value={selectedTeam?.id??''} onChange={e=>setManageTeamId(e.target.value)}>{game.teams.map(t=><option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</Select><Field label="Search free agents" placeholder="Player, country or role" value={playerQuery} onChange={e=>setPlayerQuery(e.target.value)}/></div>
+      {selectedTeam&&<div className="team-metrics"><Stat label="Current squad" value={`${selectedTeam.playerIds.length}/${game.rules.maxSquad}`}/><Stat label="Overseas used" value={`${selectedTeam.playerIds.filter(id=>game.players.find(p=>p.id===id)?.overseas).length}/${game.rules.maxOverseasSquad}`}/><Stat label="Free agents shown" value={freeAgents.length}/></div>}
+      {!canManagePlayers?<p className="muted">Direct roster changes are locked during a live auction and after league fixtures begin.</p>:<div className="form-grid">
+        <div><h4>Current squad · release players</h4><div className="scout-list">{(selectedTeam?.playerIds??[]).map(id=>game.players.find(p=>p.id===id)).filter((p):p is Player=>Boolean(p)).map(p=><div className="scout-row" key={p.id}><div><b>{p.name}</b><small>{p.nationality} · {p.role}{p.overseas?' · Overseas':''}</small></div><Button ghost onClick={()=>releasePlayer(p)}>Release</Button></div>)}</div></div>
+        <div><h4>Free agents · assign players</h4><div className="scout-list">{freeAgents.map(p=><div className="scout-row" key={p.id}><div><b>{p.name}</b><small>{p.nationality} · {p.role}{p.overseas?' · Overseas':''}</small></div><Button primary disabled={!selectedTeam||selectedTeam.playerIds.length>=game.rules.maxSquad||(p.overseas&&selectedTeam.playerIds.filter(id=>game.players.find(x=>x.id===id)?.overseas).length>=game.rules.maxOverseasSquad)} onClick={()=>assignPlayer(p)}>Assign</Button></div>)}{!freeAgents.length&&<p className="muted">No free agents match this search.</p>}</div></div>
+      </div>}
+    </Panel>
+  </div>;
 }
 
 function Auction({game,setScreen}:{game:GameState;setScreen:(s:any)=>void}){
@@ -1209,25 +1293,26 @@ function SaveManager({onBack}:{onBack:()=>void}){
       };
       const removedIds=new Set(imported.players.filter(isPakistan).map(p=>p.id));
       const oldCurrentLotId=imported.auction?.lotIds?.[imported.auction.currentIndex];
-      const additions=generatePlayers().filter(p=>!isPakistan(p)&&!imported.players.some(existing=>existing.id===p.id));
-      imported.players=[...imported.players.filter(p=>!isPakistan(p)),...additions];
+      const cleaned=removePakistaniPlayersFromGame(imported);
+      const additions=generatePlayers().filter(p=>!isPakistan(p)&&!cleaned.players.some(existing=>existing.id===p.id));
+      cleaned.players=[...cleaned.players,...additions];
 
       // Add new eligible international players to an active auction before scrubbing.
-      imported.auction=imported.auction??{status:'not-started',lotIds:[],currentIndex:0,currentBid:0,bidHistory:[],soldIds:[],unsoldIds:[]};
-      const activeAuction=imported.phase==='auction'||['not-started','paused','live'].includes(imported.auction.status);
+      cleaned.auction=cleaned.auction??{status:'not-started',lotIds:[],currentIndex:0,currentBid:0,bidHistory:[],soldIds:[],unsoldIds:[]};
+      const activeAuction=cleaned.phase==='auction'||['not-started','paused','live'].includes(cleaned.auction.status);
       if(activeAuction){
-        const lots=new Set(imported.auction.lotIds??[]);
-        for(const player of imported.players){
-          const alreadyOwned=imported.teams.some(team=>(team.playerIds??[]).includes(player.id));
+        const lots=new Set(cleaned.auction.lotIds??[]);
+        for(const player of cleaned.players){
+          const alreadyOwned=cleaned.teams.some(team=>(team.playerIds??[]).includes(player.id));
           if(player.auctionEligible!==false&&!alreadyOwned&&!lots.has(player.id)){
-            imported.auction.lotIds.push(player.id);lots.add(player.id);
+            cleaned.auction.lotIds.push(player.id);lots.add(player.id);
           }
         }
       }
 
       // This is the single authoritative cleanup for squads, XIs, retention,
       // RTM, auction lots, player-keyed stats, season archives and all ID maps.
-      const cleaned=removePakistaniPlayersFromGame(imported);
+      // Cleanup was applied above before the banned IDs were lost.
       if(oldCurrentLotId&&removedIds.has(oldCurrentLotId)){
         cleaned.auction.currentBid=0;
         delete cleaned.auction.leadingTeamId;

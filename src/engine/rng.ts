@@ -1,0 +1,2 @@
+export class RNG{private s:number;constructor(seed:number){this.s=(seed>>>0)||123456789}next(){let x=this.s;x^=x<<13;x^=x>>>17;x^=x<<5;this.s=x>>>0;return this.s/4294967296}int(min:number,max:number){return Math.floor(this.next()*(max-min+1))+min}pick<T>(a:T[]){return a[Math.floor(this.next()*a.length)]}}
+export const hashSeed=(s:string)=>{let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}

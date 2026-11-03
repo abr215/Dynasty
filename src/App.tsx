@@ -1275,7 +1275,7 @@ function TournamentDashboard({game,setScreen}:{game:GameState;setScreen:(s:any)=
     // Some imported saves retain the result fields even when their status label differs.
     const history=game.fixtures.filter(f=>f.status==='completed'||Boolean(f.winnerTeamId)||(
       f.status!=='scheduled'&&typeof f.homeRuns==='number'&&typeof f.awayRuns==='number'&&
-      (f.homeRuns>0||f.awayRuns>0||f.homeWickets>0||f.awayWickets>0)
+      (f.homeRuns??0)>0||(f.awayRuns??0)>0||(f.homeWickets??0)>0||(f.awayWickets??0)>0
     ));
     const meetings=history.filter(f=>(f.homeTeamId===nextHome.id&&f.awayTeamId===nextAway.id)||(f.homeTeamId===nextAway.id&&f.awayTeamId===nextHome.id));
     let homeWins=0,awayWins=0,close=0,ties=0;

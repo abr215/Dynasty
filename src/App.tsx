@@ -1212,18 +1212,52 @@ function buildDynastyNews(game:GameState):DynastyNewsItem[]{
   return out;
 }
 function DynastyNews({game}:{game:GameState}){
-  const [category,setCategory]=useState('All'),[visible,setVisible]=useState(9),[selected,setSelected]=useState<DynastyNewsItem|null>(null);
-  const news=buildDynastyNews(game),categories=['All',...Array.from(new Set(news.map(n=>n.category)))],filtered=category==='All'?news:news.filter(n=>n.category===category);
-  return <Panel className="dynasty-news-panel" style={{marginTop:18}}>
-    <div className="panel-head"><div><Kicker>DYNASTY MEDIA NETWORK</Kicker><h3>Latest News & Stories</h3><p>Match reports, fan chatter, press-room coverage, rivalries and player battles.</p></div><div style={{textAlign:'right'}}><b style={{fontSize:22,color:'var(--accent)'}}>{news.length.toLocaleString()}</b><small style={{display:'block',fontSize:9,color:'var(--muted)'}}>STORY LIBRARY</small></div></div>
-    <div style={{display:'flex',gap:8,overflowX:'auto',padding:'8px 0 14px'}}>{categories.map(c=><button key={c} onClick={()=>{setCategory(c);setVisible(9);}} style={{whiteSpace:'nowrap',border:'1px solid var(--line)',borderRadius:99,padding:'8px 12px',background:category===c?'var(--accent)':'var(--surface-2)',color:category===c?'#171717':'var(--muted)',fontSize:11,cursor:'pointer'}}>{c}</button>)}</div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,260px),1fr))',gap:12}}>{filtered.slice(0,visible).map(item=><article key={item.id} style={{border:'1px solid var(--line)',borderRadius:13,padding:14,background:'var(--surface-2)',display:'flex',flexDirection:'column',gap:9,minWidth:0}}>
-      <div style={{display:'flex',justifyContent:'space-between',fontSize:9,letterSpacing:'.1em',color:'var(--accent)',fontWeight:800}}><span>{item.tag}</span><span>{item.priority}</span></div>
-      <h4 style={{fontSize:15,lineHeight:1.35,margin:0}}>{item.headline}</h4><p style={{fontSize:11,lineHeight:1.6,color:'var(--muted)',margin:0,flex:1}}>{item.summary}</p>
-      <div style={{borderTop:'1px solid var(--line)',paddingTop:9,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}><small style={{fontSize:9,color:'var(--muted)'}}>Season {game.league.year} · In-game generated</small><button onClick={()=>setSelected(item)} style={{border:0,background:'none',color:'var(--accent)',fontWeight:800,cursor:'pointer'}}>Read story →</button></div>
-    </article>)}</div>
-    {visible<filtered.length&&<div style={{display:'flex',justifyContent:'center',paddingTop:15}}><Button ghost onClick={()=>setVisible(v=>v+9)}>Load more stories <ArrowDown size={14}/></Button></div>}
+  const [page,setPage]=useState(0);
+  const [paused,setPaused]=useState(false);
+  const [selected,setSelected]=useState<DynastyNewsItem|null>(null);
+  const news=buildDynastyNews(game);
+  // Select three featured stories from three different categories; show exactly one per slide.
+  const featured:DynastyNewsItem[]=[];
+  const usedCategories=new Set<string>();
+  for(const item of news){
+    if(usedCategories.has(item.category))continue;
+    featured.push(item);usedCategories.add(item.category);
+    if(featured.length===3)break;
+  }
+  useEffect(()=>{
+    if(paused||selected||featured.length<2)return;
+    const timer=window.setInterval(()=>setPage(current=>(current+1)%featured.length),5000);
+    return ()=>window.clearInterval(timer);
+  },[paused,selected,featured.length]);
+  useEffect(()=>{setPage(0);},[game.fixtures?.filter(f=>f.status==='completed').length]);
+  const active=featured[page]??featured[0];
+  return <Panel className="dynasty-news-panel" style={{marginTop:18,padding:0,overflow:'hidden'}}>
+    <div className="panel-head" style={{padding:'16px 20px 8px',margin:0}}>
+      <div><Kicker>DYNASTY MEDIA NETWORK</Kicker><h3>Latest News</h3></div>
+      <small style={{fontSize:9,color:'var(--muted)',letterSpacing:'.1em'}}>TOP STORIES</small>
+    </div>
+    <div onMouseEnter={()=>setPaused(true)} onMouseLeave={()=>setPaused(false)} style={{padding:'8px 18px 0'}}>
+      <div style={{overflow:'hidden',width:'100%',border:'1px solid var(--line)',borderRadius:13,background:'var(--surface-2)',minHeight:160}}>
+        <div key={active?.id??page} style={{padding:'20px 22px',minHeight:160,boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'space-between',gap:12,animation:'dynastyNewsSlideIn 550ms ease both'}}>
+          {active&&<>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+              <span style={{fontSize:9,letterSpacing:'.13em',fontWeight:900,color:'var(--accent)'}}>{active.tag}</span>
+              <span style={{fontSize:9,letterSpacing:'.1em',color:'var(--muted)'}}>{active.priority}</span>
+            </div>
+            <div><h4 style={{fontSize:19,lineHeight:1.3,margin:'0 0 8px'}}>{active.headline}</h4><p style={{fontSize:12,lineHeight:1.6,color:'var(--muted)',margin:0,maxWidth:900}}>{active.summary}</p></div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+              <small style={{fontSize:9,color:'var(--muted)'}}>Season {game.league.year} · In-game generated</small>
+              <button onClick={()=>setSelected(active)} style={{border:0,background:'none',color:'var(--accent)',fontWeight:800,cursor:'pointer',fontSize:10}}>Read story →</button>
+            </div>
+          </>}
+        </div>
+      </div>
+    </div>
+    <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:9,padding:'13px 0 15px'}}>
+      {[0,1,2].map(dot=><button key={dot} aria-label={`Show news ${dot+1}`} onClick={()=>setPage(dot%Math.max(1,featured.length))} style={{width:page===dot?19:7,height:7,border:0,borderRadius:99,padding:0,background:page===dot?'var(--accent)':'var(--muted)',opacity:page===dot?1:.5,cursor:'pointer',transition:'all 200ms'}}/>)}
+    </div>
     {selected&&<div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,zIndex:3000,background:'#000b',display:'grid',placeItems:'center',padding:18}}><section onClick={e=>e.stopPropagation()} style={{width:'min(620px,100%)',maxHeight:'80vh',overflow:'auto',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,padding:22}}><div className="panel-head"><div><Kicker>{selected.tag} · {selected.priority}</Kicker><h3>{selected.headline}</h3></div><button className="text-button" onClick={()=>setSelected(null)}>Close ×</button></div><p style={{lineHeight:1.7,color:'var(--muted)'}}>{selected.summary}</p><small style={{color:'var(--muted)'}}>Fictional in-game editorial coverage. Verified match facts come from the season record.</small></section></div>}
+    <style>{`@keyframes dynastyNewsSlideIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}`}</style>
   </Panel>;
 }
 

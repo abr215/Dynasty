@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import type {ReactNode,InputHTMLAttributes,SelectHTMLAttributes,ChangeEvent} from 'react';
-import {Activity,ArrowDown,ArrowLeft,ArrowRight,ArrowUp,BarChart3,CalendarDays,Check,ChevronDown,Crown,Database,Download,FolderOpen,Gavel,Grid3X3,HeartPulse,LayoutDashboard,Lock,Palette,Play,RefreshCw,Save,Shield,SlidersHorizontal,Sparkles,Target,TrendingUp,Trophy,Upload,UserCheck,Users,Wallet,Zap} from 'lucide-react';
+import {Activity,ArrowDown,ArrowLeft,ArrowRight,ArrowUp,BarChart3,CalendarDays,Check,ChevronDown,Crown,Database,Download,FolderOpen,Gavel,Grid3X3,HeartPulse,Flame,LayoutDashboard,Lock,Palette,Play,RefreshCw,Save,Shield,SlidersHorizontal,Sparkles,Target,TrendingUp,Trophy,Upload,UserCheck,Users,Wallet,Zap} from 'lucide-react';
 import type {Format,GameState,JerseyStyle,Team,Player,CrestShape,PitchType,Role,Standing,TeamRecord,SeasonPlayerStats,LiveInnings,BallEvent,SeasonArchive,OffseasonState} from './engine/types';
 import {generatePlayers} from './engine/players';
 import {saveGame,loadGames,loadLatestGame,deleteGame,downloadJSON,readJSONFile} from './engine/store';
@@ -1268,6 +1268,32 @@ function TournamentDashboard({game,setScreen}:{game:GameState;setScreen:(s:any)=
   const leader=(items:{p:Player;s:SeasonPlayerStats}[])=>(items[0]?.p.name??'—');
   const playoffCount=Math.min(4,teams.length);const nextRound=upcoming[0]?.round??Math.max(1,...game.fixtures.map(f=>f.round));
   const nextMatch=upcoming[0];
+  const nextHome=nextMatch?game.teams.find(t=>t.id===nextMatch.homeTeamId):undefined;
+  const nextAway=nextMatch?game.teams.find(t=>t.id===nextMatch.awayTeamId):undefined;
+  const headToHead=nextMatch&&nextHome&&nextAway?(()=>{
+    const meetings=completed.filter(f=>(f.homeTeamId===nextHome.id&&f.awayTeamId===nextAway.id)||(f.homeTeamId===nextAway.id&&f.awayTeamId===nextHome.id));
+    let homeWins=0,awayWins=0,close=0,ties=0;
+    for(const f of meetings){
+      if(f.winnerTeamId===nextHome.id)homeWins++;
+      else if(f.winnerTeamId===nextAway.id)awayWins++;
+      else ties++;
+      const result=(f.resultText??'').toLowerCase();
+      const runMargin=Number(result.match(/(\d+)\s+runs?/)?.[1]??Infinity);
+      const wicketMargin=Number(result.match(/(\d+)\s+wickets?/)?.[1]??Infinity);
+      if(!f.winnerTeamId||runMargin<=10||wicketMargin<=2)close++;
+    }
+    const played=meetings.length,closeRate=played?close/played:0,winGap=Math.abs(homeWins-awayWins);
+    let title='NO HISTORY YET',tone='new';
+    if(played===1)title='FIRST CHAPTER';
+    else if(played>=2&&played<4)title='EMERGING RIVALRY';
+    if(played>=3&&close>=1)title='COMPETITIVE RIVALRY';
+    if(played>=4&&closeRate>=.4)title='FIERCE RIVALRY';
+    if(played>=5&&close>=2)title='ARCH-RIVALRY';
+    if(played>=6&&close>=3&&winGap<=2)title='BITTER RIVALRY';
+    if(played>=4&&closeRate>=.6){tone='hot';if(title==='COMPETITIVE RIVALRY')title='FIERCE RIVALRY';}
+    if(title==='BITTER RIVALRY'||title==='ARCH-RIVALRY')tone='hot';
+    return {played,homeWins,awayWins,close,ties,title,tone};
+  })():undefined;
   const launchNextMatch=()=>{
     if(!nextMatch)return;
     if(game.liveMatch&&game.liveMatch.status!=='completed'&&game.liveMatch.fixtureId!==nextMatch.id){setScreen('season');return;}
@@ -1277,7 +1303,7 @@ function TournamentDashboard({game,setScreen}:{game:GameState;setScreen:(s:any)=
     if(!game.liveMatch||game.liveMatch.fixtureId!==nextMatch.id)prepareMatch(game,nextMatch);setGame({...game});setScreen('season');
   };
   return <div className="page tournament-page"><PageHead kicker="LEAGUE OPERATIONS" title={game.league.name} sub={`${game.league.year} · ${game.league.format} · Fixtures, standings, qualification pressure and season leaders in one command view.`} action={<Button primary onClick={()=>setScreen('fixtures')}><CalendarDays size={16}/> Full fixture list</Button>}/>
-    {nextMatch&&<Panel className="next-match-hero"><div className="next-match-meta"><Kicker>NEXT PLAYABLE FIXTURE</Kicker><span>{nextMatch.label??`Round ${nextMatch.round}`} · {game.league.format}</span></div><div className="next-match-teams"><div className="next-match-team"><Crest team={game.teams.find(t=>t.id===nextMatch.homeTeamId)!} size={58}/><div><b>{game.teams.find(t=>t.id===nextMatch.homeTeamId)?.name}</b><small>HOME · {game.teams.find(t=>t.id===nextMatch.homeTeamId)?.ground}</small></div></div><strong>VS</strong><div className="next-match-team away"><Crest team={game.teams.find(t=>t.id===nextMatch.awayTeamId)!} size={58}/><div><b>{game.teams.find(t=>t.id===nextMatch.awayTeamId)?.name}</b><small>AWAY · {game.teams.find(t=>t.id===nextMatch.awayTeamId)?.manager}</small></div></div></div><div className="next-match-actions"><Button ghost onClick={()=>setScreen('squads')}><Users size={15}/> View / Confirm XI</Button><Button primary onClick={launchNextMatch}><Play size={15}/> Start Match <ArrowRight size={15}/></Button></div></Panel>}
+    {nextMatch&&nextHome&&nextAway&&headToHead&&<Panel className={`next-match-hero rivalry-hero ${headToHead.tone==='hot'?'rivalry-hot':''}`}><div className="next-match-meta"><Kicker>NEXT PLAYABLE FIXTURE</Kicker><span>{nextMatch.label??`Round ${nextMatch.round}`} · {game.league.format}</span></div><div className="next-match-teams rivalry-teams"><div className="next-match-team rivalry-team rivalry-home"><Crest team={nextHome} size={62}/><div><b>{nextHome.name}</b><small>HOME · {nextHome.ground}</small></div></div><div className="rivalry-center"><span className="rivalry-kicker">HEAD TO HEAD</span><div className="rivalry-score"><b>{headToHead.homeWins}</b><span>–</span><b>{headToHead.awayWins}</b></div><small>{headToHead.played} MATCHES PLAYED</small></div><div className="next-match-team away rivalry-team rivalry-away"><Crest team={nextAway} size={62}/><div><b>{nextAway.name}</b><small>AWAY · {nextAway.manager}</small></div></div></div><div className="rivalry-footer"><div className="rivalry-tagline">{headToHead.tone==='hot'&&<Flame size={15} fill="currentColor"/>}<strong>{headToHead.title}</strong>{headToHead.tone==='hot'&&<Flame size={15} fill="currentColor"/>}</div><div className="rivalry-facts"><span><b>{headToHead.close}</b> close matches</span><span><b>{headToHead.ties}</b> tied / no-result</span></div></div><div className="next-match-actions"><Button ghost onClick={()=>setScreen('squads')}><Users size={15}/> View / Confirm XI</Button><Button primary onClick={launchNextMatch}><Play size={15}/> Start Match <ArrowRight size={15}/></Button></div><style>{`@keyframes rivalryHomeIn{from{opacity:0;transform:translateX(-42px)}to{opacity:1;transform:translateX(0)}}@keyframes rivalryAwayIn{from{opacity:0;transform:translateX(42px)}to{opacity:1;transform:translateX(0)}}@keyframes rivalryCenterIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}.rivalry-home{animation:rivalryHomeIn 650ms cubic-bezier(.2,.75,.25,1) both}.rivalry-away{animation:rivalryAwayIn 650ms cubic-bezier(.2,.75,.25,1) both}.rivalry-center{animation:rivalryCenterIn 700ms 120ms ease both}.rivalry-teams{align-items:center}.rivalry-center{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:150px;padding:0 12px}.rivalry-kicker{font-size:9px;letter-spacing:.16em;color:var(--muted);font-weight:900}.rivalry-score{display:flex;align-items:center;gap:12px;font-size:31px;line-height:1;font-weight:950}.rivalry-score span{font-size:19px;color:var(--muted)}.rivalry-center>small{font-size:8px;letter-spacing:.12em;color:var(--muted)}.rivalry-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 14px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}.rivalry-tagline,.rivalry-facts{display:flex;align-items:center;gap:8px}.rivalry-tagline{font-size:10px;letter-spacing:.1em;font-weight:950}.rivalry-hot .rivalry-tagline{color:#ff754d}.rivalry-facts{font-size:10px;color:var(--muted)}.rivalry-facts b{color:var(--text);font-size:12px}.rivalry-hot{border-color:#ff754d66;box-shadow:0 0 26px #ff754d12}@media(max-width:650px){.rivalry-center{min-width:80px;padding:0 3px}.rivalry-score{font-size:23px;gap:6px}.rivalry-team{min-width:0}.rivalry-team b{font-size:11px}.rivalry-footer{align-items:flex-start;flex-direction:column}}@media(prefers-reduced-motion:reduce){.rivalry-home,.rivalry-away,.rivalry-center{animation:none}}`}</style></Panel>}
     <DynastyNews game={game}/>
     {game.phase==='completed'&&<Panel className="season-finished-banner"><div><Kicker>SEASON COMPLETE</Kicker><h3>The final is complete. Your career can move into the offseason.</h3><p>Review the champion, archive the season and manage retention, release and RTM cards for the next auction.</p></div><Button primary onClick={()=>setScreen('offseason')}>Season transition <ArrowRight size={16}/></Button></Panel>}
     <div className="tournament-hero"><div><span className="eyebrow">SEASON STATUS</span><h2>{completed.length===game.fixtures.length?'League phase complete':live.length?'Matchday live':`Round ${Math.min(nextRound,Math.max(1,...game.fixtures.map(f=>f.round)))} in focus`}</h2><p>{completed.length} completed · {game.fixtures.length-completed.length} remaining · {game.teams.length} franchises</p><div className="tournament-progress"><i style={{width:`${game.fixtures.length?completed.length/game.fixtures.length*100:0}%`}}/></div></div><div className="tournament-season-mark"><Trophy size={31}/><b>{Math.min(playoffCount,4)} playoff places</b><small>Top {playoffCount} qualify provisionally</small></div></div>
